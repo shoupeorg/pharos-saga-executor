@@ -12,6 +12,10 @@
     .section-label.error-label{background:var(--red)}
     .step .receipt{display:block;margin-top:5px;color:#555;font:8px/1.5 "Courier New",monospace}
     .error-row{background:#fff0ee}
+    .review-grid{display:grid;grid-template-columns:repeat(3,1fr);border:2px solid #111;background:#fff}
+    .review-grid>div{padding:8px;border-right:1px solid #111}.review-grid>div:last-child{border-right:0}
+    .review-grid b{display:block;font-size:9px}.review-grid span{font:9px/1.5 "Courier New",monospace}
+    @media(max-width:720px){.review-grid{grid-template-columns:1fr}.review-grid>div{border-right:0;border-bottom:1px solid #111}}
   </style>
 </head>
 <body>
@@ -38,7 +42,8 @@
         <label for="amount">AMOUNT (SGT)<input id="amount" value="1" inputmode="decimal" autocomplete="off"></label>
         <div class="controls">
           <button class="primary" id="success" type="button">START SUCCESSFUL SAGA →</button>
-          <button class="danger" id="failure" type="button">START FORCED FAILURE →</button>
+          <button class="classic" id="failure" type="button">START PREFLIGHT FAILURE →</button>
+          <button class="danger" id="receipt-failure" type="button">START RECEIPT-VERIFIED FAILURE →</button>
           <button class="classic" id="resume" type="button" disabled>RESUME / RECOVER</button>
         </div>
       </fieldset>
@@ -50,15 +55,20 @@
         <div><span>DEMO SIGNER</span><strong id="owner">—</strong></div>
       </section>
 
+      <section class="history-window">
+        <div class="output-title"><span>02 · RETRY / RECONCILIATION EVIDENCE</span><span>SIMULATED TRANSPORT FAILURE</span></div>
+        <div class="review-grid" id="retry-evidence"><div><b>LOADING</b><span>Deterministic evidence…</span></div></div>
+      </section>
+
       <section class="output-window" aria-live="polite">
-        <div class="output-title"><span>02 · PERSISTENT_STATE.LOG</span><span id="saga-id">NO SAGA SELECTED</span></div>
+        <div class="output-title"><span>03 · PERSISTENT_STATE.LOG</span><span id="saga-id">NO SAGA SELECTED</span></div>
         <div class="summary" id="summary"><b>SYSTEM READY</b><span>Select a controlled testnet run. Every receipt and expected state is verified before the next step.</span></div>
         <div class="steps" id="steps"></div>
         <div class="balances" id="balances"></div>
       </section>
 
       <section class="history-window">
-        <div class="output-title"><span>03 · RECENT SAGAS</span><button class="mini" id="refresh" type="button">REFRESH</button></div>
+        <div class="output-title"><span>04 · RECENT SAGAS</span><button class="mini" id="refresh" type="button">REFRESH</button></div>
         <div id="history" class="history"></div>
       </section>
     </div>

@@ -1,6 +1,6 @@
 # Pharos Saga Executor
 
-A persistent, recoverable three-step on-chain workflow for the Pharos Agent Arena **Saga Executor** task. The demo approves valueless `SGT`, locks it in a saga escrow, and deposits it into a controlled test vault for the original owner. A second mode makes the vault reject one saga and demonstrates real compensating refund and allowance-revoke transactions.
+A persistent, recoverable three-step on-chain workflow for the Pharos Agent Arena **Saga Executor** task. The demo approves valueless `SGT`, locks it in a saga escrow, and deposits it into a controlled test vault for the original owner. Separate forced-failure modes preserve normal preflight protection and provide an explicitly opt-in, receipt-verified Atlantic demonstration that mines a controlled status-`0x0` deposit before compensation.
 
 **Live demo:** https://pharos-saga-executor.shoupeorg.workers.dev/
 
@@ -51,6 +51,7 @@ The installable Skill is at repository root: [`SKILL.md`](SKILL.md). Invoke the 
 ```bash
 npm run skill -- --mode=success --amount=1
 npm run skill -- --mode=failure --amount=1
+npm run skill -- --mode=failure-broadcast --amount=1
 npm run skill -- --resume=SAGA_ID
 ```
 
@@ -72,13 +73,13 @@ Forced-failure path:
 
 `… → LOCKED → DEPOSIT_PENDING → COMPENSATING → RECOVERED`
 
-The controlled failure is a real on-chain `rejectSaga` flag. The deposit is not broadcast after MCP `estimate_gas` confirms `FORCED_REJECT`. Compensation then sends a refund and allowance revoke and verifies receipt status, owner balance, escrow status, and zero allowance. Rollback means these new transactions; it does not reverse confirmed chain history. Incomplete compensation remains `RECOVERY_REQUIRED` and can be resumed.
+The normal controlled-failure mode retains preflight protection: the deposit is not broadcast after MCP `estimate_gas` confirms `FORCED_REJECT`. The separately labeled `failure-broadcast` mode is restricted in code to chain `688689`, the deployed demo contracts, dedicated signer, at most `1 SGT`, and a `250,000` gas limit. It first confirms the same `FORCED_REJECT` preflight, then intentionally submits that one known-reverting deposit and requires a mined status-`0x0` receipt before compensation. Compensation sends refund and allowance-revoke transactions and verifies owner balance restoration, both relevant allowances, zero escrow token balance, unchanged vault credit, and `Refunded` status. Incomplete compensation remains `RECOVERY_REQUIRED` and can be resumed.
 
 Transient read/transport errors retry up to three times with 0, 250, and 750 ms backoff. Confirmed contract reverts are permanent and are not retried as transient errors.
 
 ## Recorded real evidence
 
-These are immutable recorded Atlantic snapshots, not simulations. Full compact records are in [`evidence/success.json`](evidence/success.json) and [`evidence/forced-failure.json`](evidence/forced-failure.json).
+These are immutable recorded Atlantic snapshots, not simulations. Full compact records are in [`evidence/success.json`](evidence/success.json), [`evidence/forced-failure.json`](evidence/forced-failure.json), and [`evidence/receipt-verified-failure.json`](evidence/receipt-verified-failure.json). The retry result in [`evidence/retry-simulation.json`](evidence/retry-simulation.json) is deliberately and clearly simulated transport-failure testing.
 
 ### Successful saga
 
@@ -100,10 +101,21 @@ These are immutable recorded Atlantic snapshots, not simulations. Full compact r
 - Revoke: [`0x7fc8…48dd`](https://atlantic.pharosscan.xyz/tx/0x7fc89e3004d52cf6f46e5c9f0b73628ce997bf37c11f80186b17199c22a048dd), block `31451106`, status `1`
 - Final: `RECOVERED`; owner balance restored to `999 SGT`, vault credit unchanged at `1 SGT`, allowance `0`, escrow status `Refunded`.
 
+### Receipt-verified forced failure and recovery
+
+- Saga: `saga-failure-broadcast-1792072144903-160fb143`
+- Recorded: `2026-10-15T13:49:04.903Z` through `2026-10-15T13:50:03.806Z`
+- MCP preflight first confirmed `execution reverted: FORCED_REJECT`.
+- Failed deposit: [`0xf65e…5804`](https://atlantic.pharosscan.xyz/tx/0xf65e16b5e2e33df5c47d38590ea064544fd7cdec920d99d0bb1e5032c7a05804), mined status `0x0`, gas used `67,282`.
+- Refund: [`0x2008…918f`](https://atlantic.pharosscan.xyz/tx/0x2008168b4ff817b1ac9c7e54ee0ebd3679362fc62c6b38978f3ed5d70ca3918f), status `0x1`.
+- Revoke: [`0xc648…4bdc`](https://atlantic.pharosscan.xyz/tx/0xc648a3845687f3f28a00a255ca261633febadbc06d246fb5dd1777d0eb764bdc), status `0x1`.
+- Before/after owner balance: `998 SGT`; owner→escrow allowance: `0`; escrow→vault allowance: `0`; escrow token balance: `0`; vault credit unchanged at `2 SGT`; escrow status `Refunded` (`3`).
+- Conservative pre-run maximum: `0.00711737 PHRS`. Actual six-transaction cost: `359,003` gas at 10 gwei = `0.00359003 PHRS`. Remaining signer balance: `0.06950611 PHRS`.
+
 ## Verification performed
 
 - Solidity compiled with `solc 0.8.30`; deployment bytecode was checked at each receipt block through MCP `get_code`.
-- Six local tests: exact decimal boundaries, bounded transient retry, three-step success, forced failure/refund/revoke, `RECOVERY_REQUIRED`, and duplicate-free resume.
+- Eight local tests: exact decimal boundaries, deterministic bounded transient retry, published retry evidence, three-step success, preflight failure recovery, receipt-verified failure recovery, `RECOVERY_REQUIRED`, and duplicate-free resume.
 - Real success and forced-failure paths verified in the deployed API and UI.
 - At historical locked-state block `31451091`, read-only MCP `eth_call` checks from an unrelated address rejected refund with `NOT_AUTHORIZED` and deposit with `NOT_EXECUTOR`; see [`evidence/authorization-checks.json`](evidence/authorization-checks.json). No transaction was broadcast for these checks.
 - Replacement signer: 13 confirmed transactions, no pending nonce, `2,133,013` gas used at 10 gwei = `0.02133013 PHRS`; remaining balance `0.07866987 PHRS`.
@@ -122,15 +134,15 @@ Application-level read retries recognize error messages containing `timeout`, `n
 
 State-changing operations are never blindly retried. The locally derived transaction hash, nonce, estimate, gas limit, and gas price are persisted before broadcast. An ambiguous submission checks the expected transaction, receipt, and pending nonce. A receipt timeout leaves the hash pending for later reconciliation. Receipt polling is bounded to 24 checks with delays increasing from 500 ms to a 2.5-second cap.
 
-The forced-failure record is different from an on-chain reverted deposit: MCP `estimate_gas` returned the permanent `execution reverted: FORCED_REJECT` error, so **no deposit transaction was broadcast**. Compensation used two new transactions: refund `0xe1182eabff9db112ab0de0a97954310770535d5cf4566dec249bddfbcf656822` and allowance cleanup `0x7fc89e3004d52cf6f46e5c9f0b73628ce997bf37c11f80186b17199c22a048dd`, both status `1`. The owner balance was `999 SGT` before and after this run, allowance returned to `0`, vault credit stayed `1 SGT`, and the saga escrow status became `Refunded` (`3`). The amount retained in the entry is historical accounting; status `Refunded` means it is no longer locked or held for the saga.
+The historical `failure` record remains a preflight-only rejection: no deposit was broadcast. The newer, explicitly labeled `failure-broadcast` record is distinct: it first confirms `FORCED_REJECT`, then mines failed deposit `0xf65e16b5e2e33df5c47d38590ea064544fd7cdec920d99d0bb1e5032c7a05804` with status `0x0` before refund `0x2008168b4ff817b1ac9c7e54ee0ebd3679362fc62c6b38978f3ed5d70ca3918f` and revoke `0xc648a3845687f3f28a00a255ca261633febadbc06d246fb5dd1777d0eb764bdc`, both status `0x1`. The amount retained in the refunded entry is historical accounting; the independently read escrow token balance is zero.
 
 Record a short submission video without sending transactions:
 
-1. Open the deployed demo and wait for `CONNECTED`. Do **not** press either `START` button.
+1. Open the deployed demo and wait for `CONNECTED`. Do **not** press any `START` button.
 2. Under `RECENT SAGAS`, open `saga-success-1792059526471-9f8d19bd` with `VIEW LOG`. Show the `COMPLETED` state, the persistent `STATE_VERIFIED` entries, all three transaction cards, attempt counts, status-`0x1` receipts, and the before/after balances. Open each transaction hash in the Atlantic explorer, then return to the demo.
-3. Open `saga-failure-1792059571639-f00504be`. Show the `PERMANENT_FAILURE_CONFIRMED` log and recorded `execution reverted: FORCED_REJECT` error, emphasizing that it was an `estimate_gas` preflight and no deposit hash exists.
-4. Show the confirmed refund and revoke transaction cards and explorer receipts. Show `RECOVERED`, before/after owner balance `999 SGT`, allowance `0`, vault credit unchanged at `1 SGT`, and escrow status `3` (`Refunded`).
-5. Open this README’s retry section and `test/saga.test.js`. Show the three-attempt `0/250/750 ms` policy, hash/nonce reconciliation rules, and the simulated retry test. State explicitly that the retry test is simulated while the success and compensation receipts are real Atlantic evidence.
+3. Open `saga-failure-broadcast-1792072144903-160fb143`. Show `EXPECTED_REVERT_PREFLIGHT_CONFIRMED`, the persisted deposit hash, and `FAILED_DEPOSIT_RECEIPT_VERIFIED` with status `0x0`. Open the failed-deposit explorer link.
+4. Show the confirmed refund and revoke transaction cards and explorer receipts. Show `RECOVERED`, owner balance `998 SGT` before and after, both allowances `0`, escrow token balance `0`, vault credit unchanged at `2 SGT`, and escrow status `3` (`Refunded`).
+5. Show the UI’s `SIMULATED TRANSPORT FAILURE` panel: attempts `#1 +0ms`, `#2 +250ms`, `#3 +750ms`, `PASS_ON_ATTEMPT_3`, and `PASS_NO_DUPLICATE`. State explicitly that this is deterministic simulated testing, not a claimed network outage.
 6. End on the demo history with both final states visible. No run, resume, wallet, or transaction action is needed.
 
 ## Limits

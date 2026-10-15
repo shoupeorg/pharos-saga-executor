@@ -1,0 +1,19 @@
+{
+  "evidenceType": "simulated-transport-failure-test",
+  "label": "SIMULATED — NOT A REAL NETWORK OUTAGE",
+  "scenario": "Inject two temporary network timeout errors, then succeed.",
+  "attempts": [
+    { "attempt": 1, "delayMs": 0, "result": "temporary network timeout", "classification": "TRANSIENT" },
+    { "attempt": 2, "delayMs": 250, "result": "temporary network timeout", "classification": "TRANSIENT" },
+    { "attempt": 3, "delayMs": 750, "result": "ok", "classification": "SUCCESS" }
+  ],
+  "maximumAttempts": 3,
+  "outcome": "PASS_ON_ATTEMPT_3",
+  "reconciliation": {
+    "rule": "Persist hash and nonce before broadcast; reconcile transaction, receipt, and pending nonce; never blindly resubmit.",
+    "resumeTest": "A completed state-changing workflow was resumed and the sent-operation count remained unchanged.",
+    "duplicateStateChangingOperations": 0,
+    "outcome": "PASS_NO_DUPLICATE"
+  },
+  "verifiedBy": "test/saga.test.js"
+}

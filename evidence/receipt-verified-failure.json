@@ -1,0 +1,31 @@
+{
+  "network": "Pharos Atlantic Testnet",
+  "chainId": 688689,
+  "sagaId": "saga-failure-broadcast-1792072144903-160fb143",
+  "createdAt": "2026-10-15T13:49:04.903Z",
+  "recoveredAt": "2026-10-15T13:50:03.806Z",
+  "mode": "failure-broadcast",
+  "amount": "1 SGT",
+  "preflight": {
+    "method": "MCP estimate_gas",
+    "result": "execution reverted: FORCED_REJECT",
+    "gasLimit": "250000"
+  },
+  "transactions": {
+    "configureReject": { "hash": "0x4a68629b954084cda722d67d038cd19edf3c779ca758203c5e39f1cc99fb9e57", "status": "0x1", "gasUsed": "47978" },
+    "approve": { "hash": "0x9ceaa4d2889f20eba454e6c34394c7ec7389bcc90923b2a4270ceae485554121", "status": "0x1", "gasUsed": "46151" },
+    "lock": { "hash": "0xf04a63cc38c04c8d41488663034802ce3638bd3c92e5cbe8bb78b5adf1a0bdbc", "status": "0x1", "gasUsed": "126875" },
+    "failedDeposit": { "hash": "0xf65e16b5e2e33df5c47d38590ea064544fd7cdec920d99d0bb1e5032c7a05804", "status": "0x0", "blockNumber": "0x1dfff2c", "gasUsed": "67282" },
+    "refund": { "hash": "0x2008168b4ff817b1ac9c7e54ee0ebd3679362fc62c6b38978f3ed5d70ca3918f", "status": "0x1", "blockNumber": "0x1dfff36", "gasUsed": "44538" },
+    "revoke": { "hash": "0xc648a3845687f3f28a00a255ca261633febadbc06d246fb5dd1777d0eb764bdc", "status": "0x1", "blockNumber": "0x1dfff3a", "gasUsed": "26179" }
+  },
+  "before": { "ownerBalanceRaw": "998000000000000000000", "ownerAllowanceRaw": "0", "escrowBalanceRaw": "0", "vaultCreditRaw": "2000000000000000000" },
+  "after": { "ownerBalanceRaw": "998000000000000000000", "ownerAllowanceRaw": "0", "vaultAllowanceRaw": "0", "escrowBalanceRaw": "0", "vaultCreditRaw": "2000000000000000000", "escrowStatus": 3 },
+  "finalState": "RECOVERED",
+  "gas": { "estimatedMaximumPHRS": "0.00711737", "actualGasUsed": "359003", "actualSpentPHRS": "0.00359003", "remainingSignerBalancePHRS": "0.06950611" },
+  "notes": [
+    "The failed deposit was intentionally broadcast only after FORCED_REJECT was confirmed by MCP preflight.",
+    "The status-0x0 receipt is real Atlantic chain evidence, not a simulated failure.",
+    "Refund and revoke are new compensating transactions; they do not reverse confirmed history."
+  ]
+}

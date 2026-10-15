@@ -8,10 +8,20 @@ const transientPattern = /timeout|network|fetch|429|rate|temporar|503|502|connec
 const permanentPattern = /revert|FORCED_REJECT|execution reverted/i;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function retryRead(label, operation, onAttempt = async () => {}, delays = [0, 250, 750]) {
+export const RECEIPT_FAILURE_POLICY = Object.freeze({
+  chainId: 688689,
+  signer: "0xf2039216c4320CFFC5FB1B704642f9a706b95eE2",
+  token: "0x656BB1Bced876e304DCe2c8d98DDC9B1a08E928f",
+  escrow: "0x8fFD7d13D2396BfdD9FBa98FCbDDb08d5475c820",
+  vault: "0x99CD6A4948F10bEf67c20203c012706d7336aa38",
+  maximumAmountRaw: 1000000000000000000n,
+  gasLimit: 250000n,
+});
+
+export async function retryRead(label, operation, onAttempt = async () => {}, delays = [0, 250, 750], waitFor = wait) {
   let last;
   for (let attempt = 1; attempt <= delays.length; attempt += 1) {
-    if (delays[attempt - 1]) await wait(delays[attempt - 1]);
+    if (delays[attempt - 1]) await waitFor(delays[attempt - 1]);
     try { return await operation(attempt); }
     catch (error) {
       last = error;
@@ -49,7 +59,11 @@ async function persistHash(store, record, name, hash, meta) {
 
 async function sendStep({ store, record, chain, mcp, name, to, data }) {
   const existing = txSlot(record, name);
-  if (existing.receipt?.status === "0x1") return existing;
+  if (existing.receipt) {
+    existing.outcome = BigInt(existing.receipt.status) === 1n ? "SUCCESS" : "REVERTED";
+    if (existing.outcome !== "SUCCESS") throw new Error(`${name} transaction reverted`);
+    return existing;
+  }
   if (existing.hash && !existing.receipt) {
     const receipt = await mcp.call("get_transaction_receipt", { hash: existing.hash });
     if (!receipt) {
@@ -71,6 +85,48 @@ async function sendStep({ store, record, chain, mcp, name, to, data }) {
   return existing;
 }
 
+async function sendExpectedRevertStep({ store, record, chain, mcp, name, to, data, gasLimit }) {
+  const existing = txSlot(record, name);
+  if (existing.receipt) {
+    existing.outcome = BigInt(existing.receipt.status) === 0n ? "EXPECTED_REVERT" : "UNEXPECTED_SUCCESS";
+    if (existing.outcome !== "EXPECTED_REVERT") throw new Error(`${name} unexpectedly succeeded`);
+    return existing;
+  }
+  if (existing.hash) {
+    const receipt = await mcp.call("get_transaction_receipt", { hash: existing.hash });
+    if (!receipt) {
+      const error = new Error(`Existing ${name} transaction is still pending; reconcile ${existing.hash}`);
+      error.pendingHash = existing.hash;
+      throw error;
+    }
+    existing.receipt = receipt;
+    existing.outcome = BigInt(receipt.status) === 0n ? "EXPECTED_REVERT" : "UNEXPECTED_SUCCESS";
+    await store.save(record);
+    if (existing.outcome !== "EXPECTED_REVERT") throw new Error(`${name} unexpectedly succeeded`);
+    await store.log(record.id, record.state, "FAILED_DEPOSIT_RECEIPT_VERIFIED", { hash: existing.hash, status: receipt.status, blockNumber: receipt.blockNumber });
+    return existing;
+  }
+  const result = await chain.sendKnownRevert(mcp, {
+    to, data, gasLimit, maximumGasLimit: RECEIPT_FAILURE_POLICY.gasLimit,
+    onHash: (hash, meta) => persistHash(store, record, name, hash, meta),
+  });
+  existing.receipt = result.receipt;
+  existing.outcome = result.success ? "UNEXPECTED_SUCCESS" : "EXPECTED_REVERT";
+  await store.save(record);
+  if (existing.outcome !== "EXPECTED_REVERT" || BigInt(result.receipt.status) !== 0n) throw new Error(`${name} did not produce the required status 0x0 receipt`);
+  await store.log(record.id, record.state, "FAILED_DEPOSIT_RECEIPT_VERIFIED", { hash: existing.hash, status: result.receipt.status, blockNumber: result.receipt.blockNumber });
+  return existing;
+}
+
+function assertControlledReceiptFailure({ record, chain, contracts, chainInfo }) {
+  const same = (left, right) => String(left).toLowerCase() === String(right).toLowerCase();
+  if (record.mode !== "failure-broadcast") throw new Error("Receipt-verified failure is not enabled for this mode");
+  if (chainInfo.chainId !== RECEIPT_FAILURE_POLICY.chainId || record.chainId !== RECEIPT_FAILURE_POLICY.chainId) throw new Error("Receipt-verified failure is restricted to Atlantic chain 688689");
+  if (!same(chain.account.address, RECEIPT_FAILURE_POLICY.signer) || !same(record.owner, RECEIPT_FAILURE_POLICY.signer)) throw new Error("Receipt-verified failure is restricted to the dedicated demo signer");
+  if (!same(contracts.token, RECEIPT_FAILURE_POLICY.token) || !same(contracts.escrow, RECEIPT_FAILURE_POLICY.escrow) || !same(contracts.vault, RECEIPT_FAILURE_POLICY.vault)) throw new Error("Receipt-verified failure is restricted to the deployed demo contracts");
+  if (BigInt(record.amountRaw) > RECEIPT_FAILURE_POLICY.maximumAmountRaw) throw new Error("Receipt-verified failure amount exceeds 1 SGT");
+}
+
 async function verify(store, record, label, operation) {
   const result = await retryRead(label, operation, (attempt) => store.log(record.id, record.state, "READ_RETRY", attempt));
   await store.log(record.id, record.state, "STATE_VERIFIED", { label, result });
@@ -88,10 +144,14 @@ async function compensate({ store, record, chain, mcp, contracts, reason }) {
     await sendStep({ store, record, chain, mcp, name: "revoke", to: contracts.token, data: chain.encode(tokenAbi, "approve", [contracts.escrow, 0n]) });
     const final = await verify(store, record, "compensation-final-state", () => chain.snapshot(mcp, contracts, record.id));
     if (BigInt(final.allowanceRaw) !== 0n) throw new Error("Allowance cleanup verification failed");
+    if (BigInt(final.vaultAllowanceRaw) !== 0n) throw new Error("Escrow-to-vault allowance cleanup verification failed");
+    if (BigInt(final.escrowBalanceRaw) !== 0n) throw new Error("Escrow still holds token funds after compensation");
     if (final.escrow.status !== 3 && current.escrow.status === 1) throw new Error("Refund state verification failed");
+    if (record.observations.before && BigInt(final.ownerBalanceRaw) !== BigInt(record.observations.before.ownerBalanceRaw)) throw new Error("Owner token balance was not restored");
+    if (record.observations.before && BigInt(final.vaultCreditRaw) !== BigInt(record.observations.before.vaultCreditRaw)) throw new Error("Vault credit changed during failed deposit recovery");
     record.observations.after = final;
     record.compensation.complete = true;
-    await store.transition(record, "RECOVERED", "COMPENSATION_VERIFIED", { escrowStatus: final.escrow.status, allowanceRaw: final.allowanceRaw });
+    await store.transition(record, "RECOVERED", "COMPENSATION_VERIFIED", { escrowStatus: final.escrow.status, allowanceRaw: final.allowanceRaw, vaultAllowanceRaw: final.vaultAllowanceRaw, escrowBalanceRaw: final.escrowBalanceRaw, ownerBalanceRaw: final.ownerBalanceRaw, vaultCreditRaw: final.vaultCreditRaw });
   } catch (error) {
     record.errors.push({ timestamp: new Date().toISOString(), phase: "compensation", message: error.message, pendingHash: error.pendingHash ?? null });
     await store.transition(record, "RECOVERY_REQUIRED", "COMPENSATION_INCOMPLETE", { error: error.message, pendingHash: error.pendingHash ?? null });
@@ -103,19 +163,13 @@ export async function executeSaga({ store, record, chain, contracts }) {
   return chain.session(async (mcp, chainInfo) => {
     record.chain = { name: "Atlantic Testnet", chainId: chainInfo.chainId, blockAtResume: chainInfo.latestBlock };
     record.observations.before ||= await verify(store, record, "initial-state", () => chain.snapshot(mcp, contracts, record.id));
-    if (record.state === "RECOVERY_REQUIRED") {
-      const recovered = await verify(store, record, "recovery-resume-state", () => chain.snapshot(mcp, contracts, record.id));
-      if (recovered.escrow.status === 0 && BigInt(recovered.allowanceRaw) === 0n) {
-        record.observations.after = recovered;
-        record.compensation.required = true;
-        record.compensation.complete = true;
-        await store.transition(record, "RECOVERED", "COMPENSATION_VERIFIED_ON_RESUME", { escrowStatus: 0, allowanceRaw: "0" });
-        return record;
-      }
+    if (record.state === "RECOVERY_REQUIRED" && record.compensation.required) {
+      await compensate({ store, record, chain, mcp, contracts, reason: "Resume incomplete compensation" });
+      return record;
     }
     const amount = BigInt(record.amountRaw);
     try {
-      if (record.mode === "failure" && !record.transactions.configureReject?.receipt) {
+      if (["failure", "failure-broadcast"].includes(record.mode) && !record.transactions.configureReject?.receipt) {
         await sendStep({ store, record, chain, mcp, name: "configureReject", to: contracts.vault, data: chain.encode(vaultAbi, "setReject", [sagaKey(record.id), true]) });
         const rejected = await verify(store, record, "forced-reject-enabled", () => chain.read(mcp, contracts.vault, vaultAbi, "rejectSaga", [sagaKey(record.id)]));
         if (!rejected) throw new Error("Forced reject flag was not confirmed");
@@ -148,10 +202,10 @@ export async function executeSaga({ store, record, chain, contracts }) {
       record.errors.push({ timestamp: new Date().toISOString(), phase: record.state, message: error.message, pendingHash: error.pendingHash ?? null, reconciliation: error.reconciliation ?? null });
       await store.save(record);
       const state = await chain.snapshot(mcp, contracts, record.id).catch(() => null);
-      if (state?.escrow?.status === 1 || BigInt(state?.allowanceRaw || "0") > 0n) {
-        await compensate({ store, record, chain, mcp, contracts, reason: error.message });
-      } else if (error.pendingHash) {
+      if (error.pendingHash) {
         await store.transition(record, "RECOVERY_REQUIRED", "PENDING_RECONCILIATION", { hash: error.pendingHash, error: error.message });
+      } else if (state?.escrow?.status === 1 || BigInt(state?.allowanceRaw || "0") > 0n) {
+        await compensate({ store, record, chain, mcp, contracts, reason: error.message });
       } else {
         await store.transition(record, "ERROR", "SAGA_FAILED_BEFORE_LOCK", { error: error.message });
       }
@@ -182,6 +236,43 @@ export async function executeDepositStep({ store, record, chain, contracts }) {
         }
       }
 
+      if (record.mode === "failure-broadcast") {
+        assertControlledReceiptFailure({ record, chain, contracts, chainInfo });
+        let preflightError;
+        try {
+          await chain.preflight(mcp, { to: contracts.escrow, data: depositData });
+          throw new Error("Controlled FORCED_REJECT preflight unexpectedly passed");
+        } catch (error) {
+          if (!/FORCED_REJECT/i.test(error.message)) throw error;
+          preflightError = error.message;
+        }
+        const rejected = await verify(store, record, "forced-reject-still-enabled", () => chain.read(mcp, contracts.vault, vaultAbi, "rejectSaga", [sagaKey(record.id)]));
+        if (!rejected) throw new Error("Controlled FORCED_REJECT flag is not enabled");
+        await store.log(record.id, record.state, "EXPECTED_REVERT_PREFLIGHT_CONFIRMED", {
+          method: "MCP estimate_gas", error: preflightError,
+          gasLimit: RECEIPT_FAILURE_POLICY.gasLimit.toString(),
+          maximumAmountRaw: RECEIPT_FAILURE_POLICY.maximumAmountRaw.toString(),
+        });
+        const failed = await sendExpectedRevertStep({
+          store, record, chain, mcp, name: "deposit", to: contracts.escrow, data: depositData,
+          gasLimit: RECEIPT_FAILURE_POLICY.gasLimit,
+        });
+        record.failureDemonstration = {
+          type: "broadcast-and-revert",
+          preflight: "FORCED_REJECT confirmed",
+          failedDepositHash: failed.hash,
+          receiptStatus: failed.receipt.status,
+          gasLimit: RECEIPT_FAILURE_POLICY.gasLimit.toString(),
+        };
+        record.errors.push({
+          timestamp: new Date().toISOString(), phase: "deposit-broadcast", classification: "EXPECTED_PERMANENT",
+          message: "Controlled FORCED_REJECT transaction mined with status 0x0", hash: failed.hash,
+        });
+        await store.save(record);
+        await compensate({ store, record, chain, mcp, contracts, reason: "Controlled FORCED_REJECT receipt status 0x0 verified" });
+        return record;
+      }
+
       await sendStep({ store, record, chain, mcp, name: "deposit", to: contracts.escrow, data: depositData });
       const final = await verify(store, record, "deposit-final-state", () => chain.snapshot(mcp, contracts, record.id));
       const beforeCredit = BigInt(record.observations.before.vaultCreditRaw);
@@ -195,10 +286,10 @@ export async function executeDepositStep({ store, record, chain, contracts }) {
       record.errors.push({ timestamp: new Date().toISOString(), phase: record.state, message: error.message, pendingHash: error.pendingHash ?? null, reconciliation: error.reconciliation ?? null });
       await store.save(record);
       const state = await chain.snapshot(mcp, contracts, record.id).catch(() => null);
-      if (state?.escrow?.status === 1 || BigInt(state?.allowanceRaw || "0") > 0n) {
-        await compensate({ store, record, chain, mcp, contracts, reason: error.message });
-      } else if (error.pendingHash) {
+      if (error.pendingHash) {
         await store.transition(record, "RECOVERY_REQUIRED", "PENDING_RECONCILIATION", { hash: error.pendingHash, error: error.message });
+      } else if (state?.escrow?.status === 1 || BigInt(state?.allowanceRaw || "0") > 0n) {
+        await compensate({ store, record, chain, mcp, contracts, reason: error.message });
       } else {
         await store.transition(record, "ERROR", "SAGA_FAILED_BEFORE_LOCK", { error: error.message });
       }

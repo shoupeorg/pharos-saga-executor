@@ -1,7 +1,7 @@
 import { getAddress } from "viem";
 import { tokenAbi, escrowAbi, vaultAbi } from "./abis.js";
 import { AtlanticChain, parseAmount } from "./chain.js";
-import { executeDepositStep, executeSaga, FINAL_STATES, newSaga, RESUMABLE_STATES } from "./saga.js";
+import { executeDepositStep, executeSaga, FINAL_STATES, newSaga, RECEIPT_FAILURE_POLICY, RESUMABLE_STATES } from "./saga.js";
 import { D1SagaStore } from "./store.js";
 import { ATLANTIC_CHAIN_ID, OFFICIAL_MCP_SOURCE } from "./mcp-runtime.js";
 
@@ -33,13 +33,14 @@ async function startSaga(request, env) {
   const rateLimit = Number(env.RATE_LIMIT || "20");
   if (!(await store.consumeRateLimit(actor, Date.now(), 3_600_000, rateLimit))) return json({ error: `Demo rate limit reached: ${rateLimit} saga steps per hour per client.` }, 429);
   const body = await request.json();
-  if (!['success', 'failure'].includes(body.mode)) return json({ error: "mode must be success or failure" }, 400);
+  if (!["success", "failure", "failure-broadcast"].includes(body.mode)) return json({ error: "mode must be success, failure, or failure-broadcast" }, 400);
   const amountText = String(body.amount ?? "1");
   const metadata = await chain.session(async (mcp) => ({
     decimals: Number(await chain.read(mcp, deployed.token, tokenAbi, "decimals")),
     symbol: await chain.read(mcp, deployed.token, tokenAbi, "symbol"),
   }));
   const amountRaw = parseAmount(amountText, metadata.decimals, env.MAX_AMOUNT || "10");
+  if (body.mode === "failure-broadcast" && amountRaw > RECEIPT_FAILURE_POLICY.maximumAmountRaw) return json({ error: "Receipt-verified forced failure is limited to 1 SGT" }, 400);
   const id = `saga-${body.mode}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const record = newSaga({
     id, mode: body.mode, owner: chain.account.address, amount: amountText, amountRaw: amountRaw.toString(),
@@ -57,7 +58,8 @@ async function runLocked({ store, chain, contracts: deployed, record }) {
     const latest = await store.get(record.id);
     if (FINAL_STATES.has(latest.state)) return json({ saga: safeRecord(latest), resumed: false });
     if (!RESUMABLE_STATES.has(latest.state)) return json({ error: `Saga state ${latest.state} is not automatically resumable`, saga: safeRecord(latest) }, 409);
-    const operation = ["LOCKED", "DEPOSIT_PENDING"].includes(latest.state) ? executeDepositStep : executeSaga;
+    const pendingFailedDeposit = latest.state === "RECOVERY_REQUIRED" && latest.transactions?.deposit?.hash && !latest.compensation?.required;
+    const operation = ["LOCKED", "DEPOSIT_PENDING"].includes(latest.state) || pendingFailedDeposit ? executeDepositStep : executeSaga;
     const result = await operation({ store, record: latest, chain, contracts: deployed });
     return json({ saga: safeRecord(result), resumed: latest.state !== "CREATED" });
   } finally {
@@ -92,7 +94,7 @@ async function configResponse(env) {
     token: { symbol: live.symbol, decimals: live.decimals },
     latestBlock: live.block,
     mcp: { implementation: OFFICIAL_MCP_SOURCE, transport: "in-memory MCP client/server", upstream: env.ATLANTIC_RPC_URL, tools: live.tools },
-    limits: { maxAmount: env.MAX_AMOUNT || "10", sagaStepsPerHourPerClient: Number(env.RATE_LIMIT || "20") },
+    limits: { maxAmount: env.MAX_AMOUNT || "10", receiptVerifiedFailureMaxAmount: "1", receiptVerifiedFailureGasLimit: RECEIPT_FAILURE_POLICY.gasLimit.toString(), sagaStepsPerHourPerClient: Number(env.RATE_LIMIT || "20") },
     notices: ["TESTNET ONLY", "VALUELESS TEST TOKEN", "NO USER WALLET OR PRIVATE KEY REQUIRED", "FIRE/RECOVERY ACTIONS ARE REAL ATLANTIC TESTNET TRANSACTIONS"],
   };
 }

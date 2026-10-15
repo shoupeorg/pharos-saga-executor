@@ -59,6 +59,8 @@ export class AtlanticChain {
     const symbol = await this.read(mcp, contracts.token, contracts.tokenAbi, "symbol");
     const balance = await this.read(mcp, contracts.token, contracts.tokenAbi, "balanceOf", [owner]);
     const allowance = await this.read(mcp, contracts.token, contracts.tokenAbi, "allowance", [owner, contracts.escrow]);
+    const vaultAllowance = await this.read(mcp, contracts.token, contracts.tokenAbi, "allowance", [contracts.escrow, contracts.vault]);
+    const escrowBalance = await this.read(mcp, contracts.token, contracts.tokenAbi, "balanceOf", [contracts.escrow]);
     const vaultCredit = await this.read(mcp, contracts.vault, contracts.vaultAbi, "creditOf", [owner]);
     const entry = sagaId ? await this.read(mcp, contracts.escrow, contracts.escrowAbi, "entries", [sagaKey(sagaId)]) : ["0x0000000000000000000000000000000000000000", 0n, 0];
     return {
@@ -70,6 +72,10 @@ export class AtlanticChain {
       ownerBalance: formatUnits(balance, decimals),
       allowanceRaw: allowance.toString(),
       allowance: formatUnits(allowance, decimals),
+      vaultAllowanceRaw: vaultAllowance.toString(),
+      vaultAllowance: formatUnits(vaultAllowance, decimals),
+      escrowBalanceRaw: escrowBalance.toString(),
+      escrowBalance: formatUnits(escrowBalance, decimals),
       vaultCreditRaw: vaultCredit.toString(),
       vaultCredit: formatUnits(vaultCredit, decimals),
       escrow: { owner: entry[0], amountRaw: entry[1].toString(), amount: formatUnits(entry[1], decimals), status: Number(entry[2]) },
@@ -100,14 +106,45 @@ export class AtlanticChain {
       gas: (BigInt(estimate.gas) * 120n) / 100n,
       gasPrice,
     });
+    return this.broadcastSigned(mcp, { raw, nonce, gasPrice, gasLimit: (BigInt(estimate.gas) * 120n) / 100n, value, onHash, receiptPolls, gasEstimate: estimate.gas });
+  }
+
+  async sendKnownRevert(mcp, { to, data = "0x", value = 0n, gasLimit, maximumGasLimit = 250000n, onHash, receiptPolls = 24 }) {
+    const boundedGas = BigInt(gasLimit);
+    if (boundedGas <= 0n || boundedGas > BigInt(maximumGasLimit)) throw new Error("Known-revert gas limit exceeds the controlled demo bound");
+    const [nonceInfo, gasInfo] = await Promise.all([
+      mcp.call("get_transaction_count", { address: this.account.address, block: "pending" }),
+      mcp.call("get_gas_price"),
+    ]);
+    const nonce = BigInt(nonceInfo.nonce);
+    const gasPrice = BigInt(gasInfo.gasPriceWei);
+    const raw = await this.account.signTransaction({
+      chainId: ATLANTIC_CHAIN_ID,
+      type: "legacy",
+      nonce,
+      to,
+      data,
+      value,
+      gas: boundedGas,
+      gasPrice,
+    });
+    return this.broadcastSigned(mcp, {
+      raw, nonce, gasPrice, gasLimit: boundedGas, value, onHash, receiptPolls,
+      gasEstimate: "KNOWN_REVERT_PREFLIGHT_CONFIRMED",
+      knownRevert: true,
+    });
+  }
+
+  async broadcastSigned(mcp, { raw, nonce, gasPrice, gasLimit, value, onHash, receiptPolls, gasEstimate, knownRevert = false }) {
     const expectedHash = keccak256(raw);
     await onHash?.(expectedHash, {
       nonce: nonce.toString(),
-      gasEstimate: estimate.gas,
-      gasLimit: ((BigInt(estimate.gas) * 120n) / 100n).toString(),
+      gasEstimate,
+      gasLimit: gasLimit.toString(),
       gasPriceWei: gasPrice.toString(),
-      maximumCostWei: (((BigInt(estimate.gas) * 120n) / 100n) * gasPrice + value).toString(),
+      maximumCostWei: (gasLimit * gasPrice + value).toString(),
       rawPersistedBeforeBroadcast: true,
+      knownRevert,
     });
     try {
       const submitted = await mcp.call("send_raw_transaction", { rawTransaction: raw });
