@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pharos-saga-executor",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pharos-saga-executor-state",
+      "database_id": "40482fac-3aeb-4c5a-af75-db1e763ad802",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "ATLANTIC_RPC_URL": "https://atlantic.dplabs-internal.com",
+    "CHAIN_ID": "688689",
+    "EXPLORER_URL": "https://atlantic.pharosscan.xyz",
+    "DEMO_TOKEN_ADDRESS": "0x656bb1bced876e304dce2c8d98ddc9b1a08e928f",
+    "SAGA_ESCROW_ADDRESS": "0x8ffd7d13d2396bfdd9fba98fcbddb08d5475c820",
+    "TEST_VAULT_ADDRESS": "0x99cd6a4948f10bef67c20203c012706d7336aa38",
+    "MAX_AMOUNT": "10",
+    "RATE_LIMIT": "20"
+  },
+  "observability": { "enabled": true }
+}
