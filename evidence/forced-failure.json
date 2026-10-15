@@ -1,0 +1,19 @@
+{
+  "recordedAt": "2026-10-15T10:21:13.165Z",
+  "network": "Pharos Atlantic Testnet",
+  "chainId": 688689,
+  "sagaId": "saga-failure-1792059571639-f00504be",
+  "amount": "1 SGT",
+  "permanentFailure": "MCP estimate_gas returned execution reverted: FORCED_REJECT",
+  "transactions": {
+    "configureReject": { "hash": "0x94cf0e832122a86bb659d5e89a3527917c9f9d2c480f80c6e37a4137bbc94c15", "block": 31451035, "status": 1 },
+    "approve": { "hash": "0xbe663bc8473198c1b157155078d9ddb28471413869d14a5cf7b59a9702585b5e", "block": 31451081, "status": 1 },
+    "lock": { "hash": "0x38dbd7f3f346dd73f2a415ec3336797baed42637dc031bc75a7705be36d3866c", "block": 31451091, "status": 1 },
+    "refund": { "hash": "0xe1182eabff9db112ab0de0a97954310770535d5cf4566dec249bddfbcf656822", "block": 31451102, "status": 1 },
+    "revoke": { "hash": "0x7fc89e3004d52cf6f46e5c9f0b73628ce997bf37c11f80186b17199c22a048dd", "block": 31451106, "status": 1 }
+  },
+  "before": { "ownerBalance": "999 SGT", "allowance": "0 SGT", "vaultCredit": "1 SGT", "escrowStatus": 0 },
+  "after": { "ownerBalance": "999 SGT", "allowance": "0 SGT", "vaultCredit": "1 SGT", "escrowStatus": 3 },
+  "compensation": { "refundVerified": true, "allowanceRevoked": true, "complete": true },
+  "decision": "RECOVERED"
+}

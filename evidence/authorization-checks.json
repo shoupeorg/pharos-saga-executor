@@ -1,0 +1,13 @@
+{
+  "recordedAt": "2026-10-15T10:24:00Z",
+  "network": "Pharos Atlantic Testnet",
+  "chainId": 688689,
+  "historicalBlock": 31451091,
+  "sagaId": "saga-failure-1792059571639-f00504be",
+  "unauthorizedCaller": "0x1000000000000000000000000000000000000001",
+  "checks": [
+    { "method": "SagaEscrow.refund", "result": "execution reverted: NOT_AUTHORIZED" },
+    { "method": "SagaEscrow.deposit", "result": "execution reverted: NOT_EXECUTOR" }
+  ],
+  "method": "read-only historical eth_call through official Pharos MCP implementation; no transaction broadcast"
+}

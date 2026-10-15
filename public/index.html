@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pharos Saga Executor</title>
+  <meta name="description" content="A persistent approve, escrow, deposit saga with on-chain compensation on Pharos Atlantic Testnet.">
+  <link rel="icon" href="/pharos-logo.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="desktop">
+  <header class="desktop-header">
+    <a class="brand" href="/"><span class="logo-box"><img src="/pharos-logo.png" alt="Pharos logo"></span><span>PHAROS<span class="brand-sub">SAGA EXECUTOR</span></span></a>
+    <span class="desktop-badge">ATLANTIC TESTNET / 688689</span>
+  </header>
+
+  <section class="app-window">
+    <div class="titlebar"><span><b class="app-icon">⇄</b> SAGA EXECUTOR.EXE</span><span class="window-chrome"><i>_</i><i>□</i><i>×</i></span></div>
+    <div class="menubar"><span>Persistent Workflow</span><span>OFFICIAL CHAIN MCP</span><span class="menu-right">TESTNET ONLY</span></div>
+    <div class="window-body">
+      <section class="intro">
+        <p class="kicker">PHAROS AGENT ARENA / RECOVERABLE EXECUTION</p>
+        <h1>APPROVE → ESCROW → DEPOSIT<span class="cursor">_</span></h1>
+        <p>Run a real three-step test-token saga or force the vault to reject the deposit and watch compensating transactions refund escrow and revoke allowance.</p>
+      </section>
+
+      <div class="notice"><b>⚠ VALUELESS TEST TOKEN</b><span>Transactions use a dedicated server-side Atlantic signer. No user wallet, key, or real funds.</span></div>
+
+      <fieldset class="control-panel">
+        <legend>01 · RUN CONFIGURATION</legend>
+        <label for="amount">AMOUNT (SGT)<input id="amount" value="1" inputmode="decimal" autocomplete="off"></label>
+        <div class="controls">
+          <button class="primary" id="success" type="button">START SUCCESSFUL SAGA →</button>
+          <button class="danger" id="failure" type="button">START FORCED FAILURE →</button>
+          <button class="classic" id="resume" type="button" disabled>RESUME / RECOVER</button>
+        </div>
+      </fieldset>
+
+      <section class="telemetry">
+        <div><span>CONNECTION</span><strong id="connection" data-state="idle">LOADING</strong></div>
+        <div><span>LATEST BLOCK</span><strong id="block">—</strong></div>
+        <div><span>SAGA STATE</span><strong id="state">—</strong></div>
+        <div><span>DEMO SIGNER</span><strong id="owner">—</strong></div>
+      </section>
+
+      <section class="output-window" aria-live="polite">
+        <div class="output-title"><span>02 · PERSISTENT_STATE.LOG</span><span id="saga-id">NO SAGA SELECTED</span></div>
+        <div class="summary" id="summary"><b>SYSTEM READY</b><span>Select a controlled testnet run. Every receipt and expected state is verified before the next step.</span></div>
+        <div class="steps" id="steps"></div>
+        <div class="balances" id="balances"></div>
+      </section>
+
+      <section class="history-window">
+        <div class="output-title"><span>03 · RECENT SAGAS</span><button class="mini" id="refresh" type="button">REFRESH</button></div>
+        <div id="history" class="history"></div>
+      </section>
+    </div>
+    <div class="statusbar"><span><i class="status-dot"></i><b id="system-status">SYSTEM STARTING</b></span><span id="mcp-status">MCP CONNECTING</span><span>TESTNET / READ + CONTROLLED WRITE</span></div>
+  </section>
+  <footer><span>PHAROS AGENT ARENA · SAGA EXECUTOR</span><a href="https://github.com/PharosNetwork/pharos-mcp" target="_blank" rel="noopener noreferrer">OFFICIAL MCP SOURCE ↗</a></footer>
+</main>
+<script src="/app.js" defer></script>
+</body>
+</html>

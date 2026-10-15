@@ -1,0 +1,16 @@
+{
+  "recordedAt": "2026-10-15T10:19:13.818Z",
+  "network": "Pharos Atlantic Testnet",
+  "chainId": 688689,
+  "sagaId": "saga-success-1792059526471-9f8d19bd",
+  "amount": "1 SGT",
+  "states": ["APPROVED", "LOCKED", "COMPLETED"],
+  "transactions": {
+    "approve": { "hash": "0xe65c6af1073b0b3be804118aa0391cb8c660c2c08e6540edba1464c7d79acf08", "block": 31450998, "status": 1 },
+    "lock": { "hash": "0xf311775e26ceb27ab5e3f226eb86f2c0d010e40c0d25859e23295e4bb83ad72d", "block": 31451006, "status": 1 },
+    "deposit": { "hash": "0x46b54b978866b294dbc2b1c904bc4001861b1ba18de1f6b3cfc6d09da6297c5a", "block": 31451013, "status": 1 }
+  },
+  "before": { "ownerBalance": "1000 SGT", "allowance": "0 SGT", "vaultCredit": "0 SGT", "escrowStatus": 0 },
+  "after": { "ownerBalance": "999 SGT", "allowance": "0 SGT", "vaultCredit": "1 SGT", "escrowStatus": 2 },
+  "decision": "COMPLETED"
+}
