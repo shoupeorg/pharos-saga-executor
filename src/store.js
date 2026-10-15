@@ -51,6 +51,18 @@ export class D1SagaStore {
     return result.results.map((row) => JSON.parse(row.record_json));
   }
 
+  async logs(id) {
+    const result = await this.db.prepare("SELECT sequence, timestamp, state, event, details_json FROM saga_logs WHERE saga_id = ? ORDER BY sequence ASC")
+      .bind(id).all();
+    return result.results.map((row) => ({
+      sequence: row.sequence,
+      timestamp: row.timestamp,
+      state: row.state,
+      event: row.event,
+      details: JSON.parse(row.details_json),
+    }));
+  }
+
   async consumeRateLimit(actor, now = Date.now(), windowMs = 3_600_000, limit = 6) {
     const row = await this.db.prepare("SELECT window_start, count FROM rate_limits WHERE actor = ?").bind(actor).first();
     if (!row || now - row.window_start >= windowMs) {
@@ -65,13 +77,14 @@ export class D1SagaStore {
 }
 
 export class MemorySagaStore {
-  constructor() { this.records = new Map(); this.locks = new Map(); this.logs = []; }
+  constructor() { this.records = new Map(); this.locks = new Map(); this._logs = []; }
   async create(record) { this.records.set(record.id, structuredClone(record)); return record; }
   async get(id) { const r = this.records.get(id); return r ? structuredClone(r) : null; }
   async save(record) { this.records.set(record.id, structuredClone(record)); return record; }
-  async transition(record, state, event, details = {}) { record.state = state; record.timeline.push({ timestamp: new Date().toISOString(), state, event, details }); this.logs.push({ id: record.id, state, event, details }); return this.save(record); }
-  async log(id, state, event, details) { this.logs.push({ id, state, event, details }); }
+  async transition(record, state, event, details = {}) { record.state = state; record.timeline.push({ timestamp: new Date().toISOString(), state, event, details }); this._logs.push({ id: record.id, state, event, details }); return this.save(record); }
+  async log(id, state, event, details) { this._logs.push({ id, state, event, details }); }
   async acquire(id, token) { if (this.locks.has(id)) return false; this.locks.set(id, token); return true; }
   async release(id, token) { if (this.locks.get(id) === token) this.locks.delete(id); }
   async list() { return [...this.records.values()].map(structuredClone); }
+  async logs(id) { return this._logs.filter((entry) => entry.id === id).map(structuredClone); }
 }

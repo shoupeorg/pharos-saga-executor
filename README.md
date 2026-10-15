@@ -108,6 +108,31 @@ These are immutable recorded Atlantic snapshots, not simulations. Full compact r
 - At historical locked-state block `31451091`, read-only MCP `eth_call` checks from an unrelated address rejected refund with `NOT_AUTHORIZED` and deposit with `NOT_EXECUTOR`; see [`evidence/authorization-checks.json`](evidence/authorization-checks.json). No transaction was broadcast for these checks.
 - Replacement signer: 13 confirmed transactions, no pending nonce, `2,133,013` gas used at 10 gwei = `0.02133013 PHRS`; remaining balance `0.07866987 PHRS`.
 
+## Submission audit and recorded-run video
+
+The successful run advanced only after each receipt and post-state check:
+
+| Step | Transaction | Receipt | Gate before the next step |
+| --- | --- | --- | --- |
+| Approve | `0xe65c6af1073b0b3be804118aa0391cb8c660c2c08e6540edba1464c7d79acf08` | status `1`, block `31450998` | MCP `eth_call` confirmed allowance `1000000000000000000` raw SGT. |
+| Lock | `0xf311775e26ceb27ab5e3f226eb86f2c0d010e40c0d25859e23295e4bb83ad72d` | status `1`, block `31451006` | Snapshot confirmed escrow status `Locked`, the signer as owner, and exactly `1 SGT`. |
+| Deposit | `0x46b54b978866b294dbc2b1c904bc4001861b1ba18de1f6b3cfc6d09da6297c5a` | status `1`, block `31451013` | Snapshot confirmed escrow status `Deposited`, vault-credit increase of `1 SGT`, and allowance `0`. |
+
+Application-level read retries recognize error messages containing `timeout`, `network`, `fetch`, `429`, `rate`, `temporar`, `503`, `502`, or `connection`. They make at most three attempts with delays of `0`, `250`, and `750` ms. The local retry test deliberately injects two simulated `temporary network timeout` errors and succeeds on attempt three; it is **simulated test evidence, not a real Atlantic outage**. No transient network failure occurred in the recorded real sagas.
+
+State-changing operations are never blindly retried. The locally derived transaction hash, nonce, estimate, gas limit, and gas price are persisted before broadcast. An ambiguous submission checks the expected transaction, receipt, and pending nonce. A receipt timeout leaves the hash pending for later reconciliation. Receipt polling is bounded to 24 checks with delays increasing from 500 ms to a 2.5-second cap.
+
+The forced-failure record is different from an on-chain reverted deposit: MCP `estimate_gas` returned the permanent `execution reverted: FORCED_REJECT` error, so **no deposit transaction was broadcast**. Compensation used two new transactions: refund `0xe1182eabff9db112ab0de0a97954310770535d5cf4566dec249bddfbcf656822` and allowance cleanup `0x7fc89e3004d52cf6f46e5c9f0b73628ce997bf37c11f80186b17199c22a048dd`, both status `1`. The owner balance was `999 SGT` before and after this run, allowance returned to `0`, vault credit stayed `1 SGT`, and the saga escrow status became `Refunded` (`3`). The amount retained in the entry is historical accounting; status `Refunded` means it is no longer locked or held for the saga.
+
+Record a short submission video without sending transactions:
+
+1. Open the deployed demo and wait for `CONNECTED`. Do **not** press either `START` button.
+2. Under `RECENT SAGAS`, open `saga-success-1792059526471-9f8d19bd` with `VIEW LOG`. Show the `COMPLETED` state, the persistent `STATE_VERIFIED` entries, all three transaction cards, attempt counts, status-`0x1` receipts, and the before/after balances. Open each transaction hash in the Atlantic explorer, then return to the demo.
+3. Open `saga-failure-1792059571639-f00504be`. Show the `PERMANENT_FAILURE_CONFIRMED` log and recorded `execution reverted: FORCED_REJECT` error, emphasizing that it was an `estimate_gas` preflight and no deposit hash exists.
+4. Show the confirmed refund and revoke transaction cards and explorer receipts. Show `RECOVERED`, before/after owner balance `999 SGT`, allowance `0`, vault credit unchanged at `1 SGT`, and escrow status `3` (`Refunded`).
+5. Open this README’s retry section and `test/saga.test.js`. Show the three-attempt `0/250/750 ms` policy, hash/nonce reconciliation rules, and the simulated retry test. State explicitly that the retry test is simulated while the success and compensation receipts are real Atlantic evidence.
+6. End on the demo history with both final states visible. No run, resume, wallet, or transaction action is needed.
+
 ## Limits
 
 - This is a single dedicated Atlantic demo signer and valueless token, not a generalized custody service.

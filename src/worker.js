@@ -111,6 +111,14 @@ export default {
         return json({ sagas: (await store.list(30)).map(safeRecord) });
       }
       if (url.pathname === "/api/sagas" && request.method === "POST") return startSaga(request, env);
+      const detail = url.pathname.match(/^\/api\/sagas\/([^/]+)$/);
+      if (detail && request.method === "GET") {
+        const { store } = await buildContext(env);
+        const id = decodeURIComponent(detail[1]);
+        const record = await store.get(id);
+        if (!record) return json({ error: "Saga not found" }, 404);
+        return json({ saga: safeRecord({ ...record, logs: await store.logs(id) }) });
+      }
       const resume = url.pathname.match(/^\/api\/sagas\/([^/]+)\/resume$/);
       if (resume && request.method === "POST") return resumeSaga(request, env, decodeURIComponent(resume[1]));
       if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
